@@ -138,7 +138,7 @@ def evaluate_and_visualize(
     output_dir: Path,
     device: str = "cuda",
 ):
-    """Full evaluation with visualizations."""
+    """Full evaluation with visualizations on held-out test set only."""
     import torch
     from detect import detect, load_signature
 
@@ -147,7 +147,17 @@ def evaluate_and_visualize(
 
     # Load benchmark data
     from generate_signature import load_benchmark_data
-    samples = load_benchmark_data(data_dir)
+    all_samples = load_benchmark_data(data_dir)
+
+    # Filter to held-out test set only (prevents data leakage)
+    test_indices = signature.get("test_indices")
+    if test_indices is None:
+        print("WARNING: No test_indices in signature. Evaluating on ALL data (may include training data).")
+        samples = all_samples
+    else:
+        test_indices_set = set(test_indices)
+        samples = [s for i, s in enumerate(all_samples) if i in test_indices_set]
+        print(f"Using held-out test set: {len(samples)} of {len(all_samples)} samples")
 
     print(f"Evaluating on {len(samples)} samples...")
 
@@ -222,6 +232,7 @@ def evaluate_and_visualize(
     results = {
         "signature": str(signature_path),
         "n_samples": len(samples),
+        "held_out_evaluation": test_indices is not None,
         "optimal_threshold": best_threshold,
         "metrics": best_metrics,
         "af_score_mean": float(np.mean(af_scores)),

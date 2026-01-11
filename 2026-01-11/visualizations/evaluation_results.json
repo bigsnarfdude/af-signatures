@@ -1,18 +1,19 @@
 {
   "signature": "signatures/gpt2-small-l8.json",
-  "n_samples": 2330,
-  "optimal_threshold": 0.9400000000000002,
+  "n_samples": 466,
+  "held_out_evaluation": true,
+  "optimal_threshold": 0.9300000000000002,
   "metrics": {
-    "tp": 520,
-    "fp": 4,
+    "tp": 104,
+    "fp": 3,
     "fn": 0,
-    "tn": 1806,
-    "f1": 0.9961685823754789,
-    "precision": 0.9923664122137404,
+    "tn": 359,
+    "f1": 0.985781990521327,
+    "precision": 0.9719626168224299,
     "recall": 1.0
   },
-  "af_score_mean": 0.999398025688785,
-  "af_score_std": 0.0016509117018782809,
-  "non_af_score_mean": 0.3234172970377804,
-  "non_af_score_std": 0.2293808510547162
+  "af_score_mean": 0.9993435415879033,
+  "af_score_std": 0.0014425890034909811,
+  "non_af_score_mean": 0.33562190315509965,
+  "non_af_score_std": 0.24046408809334022
 }

@@ -182,12 +182,19 @@ def train_signature(
     y: np.ndarray,
     n_features: int = 50,
     test_size: float = 0.2,
-) -> Tuple[Dict, Dict]:
-    """Train L1 logistic regression and extract top features."""
+) -> Tuple[Dict, Dict, np.ndarray]:
+    """Train L1 logistic regression and extract top features.
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=test_size, random_state=42, stratify=y
+    Returns:
+        signature: Dict with feature weights and threshold
+        metrics: Dict with evaluation metrics
+        test_indices: Array of indices used for test set (for held-out evaluation)
+    """
+
+    # Split data with indices tracking
+    indices = np.arange(len(X))
+    X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(
+        X, y, indices, test_size=test_size, random_state=42, stratify=y
     )
 
     print(f"Training on {len(X_train)} samples, testing on {len(X_test)}")
@@ -239,7 +246,7 @@ def train_signature(
         "threshold": float(best_threshold),
     }
 
-    return signature, metrics
+    return signature, metrics, test_idx
 
 
 def generate_signature(
@@ -280,7 +287,7 @@ def generate_signature(
 
     # Train signature
     print("\nTraining signature...")
-    signature, metrics = train_signature(activations, labels, n_features=n_features)
+    signature, metrics, test_indices = train_signature(activations, labels, n_features=n_features)
 
     # Build output
     output = {
@@ -294,6 +301,7 @@ def generate_signature(
         **signature,
         "metrics": metrics,
         "training_samples": len(samples),
+        "test_indices": test_indices.tolist(),  # For held-out evaluation
         "generated": datetime.now().isoformat(),
     }
 

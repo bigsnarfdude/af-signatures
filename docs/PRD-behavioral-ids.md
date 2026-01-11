@@ -32,13 +32,17 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 ### 1.3 Success Criteria
 
-| Metric | Target |
-|--------|--------|
-| Detection F1 (alignment faking) | >95% |
-| Detection F1 (other behaviors) | >85% |
-| Latency overhead per response | <100ms |
-| False positive rate | <1% |
-| Supported models | 5+ major architectures |
+| Metric | Target | Notes |
+|--------|--------|-------|
+| Detection F1 (alignment faking) | >95% | On held-out test set (20% of data, never seen during training) |
+| Detection F1 (other P0 behaviors) | >90% | On held-out test set |
+| Detection F1 (P1/P2 behaviors) | >85% | On held-out test set |
+| Latency overhead per response | <100ms p99 | <50ms p50 target |
+| False positive rate (P0 safety) | <5% | Optimize for recall on safety-critical behaviors |
+| False positive rate (P1/P2) | <1% | Standard precision/recall balance |
+| Cross-model generalization | >80% F1 | Train on model A, test on model B |
+| Baseline improvement | >10% F1 | vs. text-only classifier baseline |
+| Supported models | 5+ architectures | GPT-2, Gemma, Llama, Mistral, Qwen |
 
 ---
 
@@ -75,12 +79,13 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 #### FR-2: Probe Application
 - Load probe signatures from standardized format
 - Apply multiple probes in single pass (shared activation extraction)
-- Return probability scores (0-1) for each behavioral state
+- Return calibrated probability scores (0-1) for each behavioral state
+- Calibration via Platt scaling or isotonic regression
 - Support configurable thresholds per probe
 
 #### FR-3: State Vector Output
 - Return structured state vector with all probe scores
-- Include confidence intervals where applicable
+- Include confidence intervals via ensemble variance or bootstrap estimation
 - Flag triggered states (score > threshold)
 - Timestamp and metadata for logging
 
@@ -88,7 +93,11 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 #### FR-4: Signature Format
 - Standardized JSON/binary format for probe weights
-- Include metadata: model, layer, training data info, performance metrics
+- Include metadata:
+  - Model: name, family, layer, hook point
+  - Training data: hash, sample count, class balance, **held-out test indices**
+  - Performance: F1, precision, recall (on held-out test set)
+  - Threshold: optimized on validation fold, not test set
 - Version control for signature updates
 - Support both probe (dense) and SAE (sparse) signatures
 
@@ -101,22 +110,23 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 #### FR-6: Signature Generation
 - Training pipeline for new behavioral probes
 - Support for labeled dataset ingestion
-- Cross-validation and threshold optimization
-- Export to standard signature format
+- Nested cross-validation for hyperparameter tuning
+- Threshold optimization on validation fold (never on final test set)
+- Export to standard signature format with test indices for reproducibility
 
 ### 3.3 Integration Modes
 
 #### FR-7: Inline Mode
 - Hook into model inference pipeline
 - Extract activations during normal forward pass
-- Minimal latency overhead (<50ms)
-- Optional: block responses that trigger critical states
+- Minimal latency overhead (<50ms p50, <100ms p99)
+- Logging and alerting only in v1 (blocking deferred to v2)
 
 #### FR-8: Batch Mode
 - Process logged responses offline
-- High throughput (1000+ responses/minute)
+- High throughput (1000+ responses/minute on single A100 GPU)
 - Generate aggregate reports and statistics
-- Support distributed processing
+- Support distributed processing for larger workloads
 
 #### FR-9: API Mode
 - REST API for external integration
@@ -156,14 +166,15 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 ### 4.2 Scalability
 - Horizontal scaling for batch processing
-- Support models up to 70B parameters
+- Support models up to 70B parameters (requires 80GB+ GPU for inline mode)
 - Handle 10M+ logged responses per day
 - Signature database: 1000+ signatures
+- Memory scales with number of active probes (~100MB per probe)
 
 ### 4.3 Reliability
 - 99.9% uptime for inline mode
 - Graceful degradation if probes fail
-- No false negatives on critical behaviors (prefer false positives)
+- Optimize recall over precision for P0 safety behaviors (accept higher FPR)
 - Automatic recovery from transient failures
 
 ### 4.4 Security
@@ -184,12 +195,12 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 ### 5.1 Safety Critical (P0)
 
-| Behavior | Description | Training Signal |
-|----------|-------------|-----------------|
-| alignment_faking | Appearing compliant while reasoning deceptively | Anthropic AF dataset, synthetic |
-| deception | Actively misleading users | Synthetic deceptive responses |
-| sandbagging | Deliberately underperforming | Capability eval failures |
-| power_seeking | Acquiring resources/influence inappropriately | Synthetic scenarios |
+| Behavior | Description | Training Signal | Min Samples |
+|----------|-------------|-----------------|-------------|
+| alignment_faking | Appearing compliant while reasoning deceptively | Anthropic AF dataset (2024), af-detection-benchmark | 500+ pos |
+| deception | Actively misleading users | Synthetic deceptive responses (TBD) | 500+ pos |
+| sandbagging | Deliberately underperforming | Capability eval failures, MMLU sandbagging | 500+ pos |
+| power_seeking | Acquiring resources/influence inappropriately | MACHIAVELLI benchmark, synthetic | 500+ pos |
 
 ### 5.2 Quality (P1)
 
