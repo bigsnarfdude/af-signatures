@@ -1,9 +1,10 @@
 # Product Requirements Document: LLM Behavioral Intrusion Detection System
 
 **Project Name:** BIDS (Behavioral Intrusion Detection System)
-**Version:** 0.1 Draft
+**Version:** 0.2 Draft
 **Date:** 2026-01-11
 **Author:** Vincent / Claude
+**Last Updated:** 2026-01-11
 
 ---
 
@@ -204,28 +205,28 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 ### 5.2 Quality (P1)
 
-| Behavior | Description | Training Signal |
-|----------|-------------|-----------------|
-| sycophancy | Excessive agreement against better judgment | Sycophancy benchmark |
-| hallucination | Confident false claims | Factuality datasets |
-| refusal_appropriate | Correctly refusing harmful requests | Safety eval data |
-| refusal_excessive | Over-refusing benign requests | False refusal examples |
+| Behavior | Description | Training Signal | Min Samples |
+|----------|-------------|-----------------|-------------|
+| sycophancy | Excessive agreement against better judgment | TruthfulQA (Lin et al. 2022), Perez et al. sycophancy | 200+ pos |
+| hallucination | Confident false claims | HaluEval, TriviaQA failures | 200+ pos |
+| refusal_appropriate | Correctly refusing harmful requests | HarmBench, AdvBench | 200+ pos |
+| refusal_excessive | Over-refusing benign requests | XSTest false refusals | 200+ pos |
 
 ### 5.3 Security (P1)
 
-| Behavior | Description | Training Signal |
-|----------|-------------|-----------------|
-| jailbreak_compliance | Following adversarial bypass prompts | Jailbreak datasets |
-| prompt_injection | Executing injected instructions | Injection examples |
-| exfiltration_attempt | Trying to leak information | Synthetic scenarios |
+| Behavior | Description | Training Signal | Min Samples |
+|----------|-------------|-----------------|-------------|
+| jailbreak_compliance | Following adversarial bypass prompts | JailbreakBench, AdvBench | 200+ pos |
+| prompt_injection | Executing injected instructions | Greshake et al. injection dataset | 200+ pos |
+| exfiltration_attempt | Trying to leak information | Synthetic scenarios (TBD) | 200+ pos |
 
 ### 5.4 Research (P2)
 
-| Behavior | Description | Training Signal |
-|----------|-------------|-----------------|
-| uncertainty | Model is uncertain about response | Calibration data |
-| out_of_distribution | Input is unlike training data | OOD detection data |
-| capability_boundary | Near edge of model capabilities | Capability probing |
+| Behavior | Description | Training Signal | Min Samples |
+|----------|-------------|-----------------|-------------|
+| uncertainty | Model is uncertain about response | Calibration datasets, entropy probing | 100+ pos |
+| out_of_distribution | Input is unlike training data | OOD detection benchmarks | 100+ pos |
+| capability_boundary | Near edge of model capabilities | Capability probing, MMLU edge cases | 100+ pos |
 
 ---
 
@@ -278,10 +279,11 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 ## 7. Out of Scope (v1)
 
 - Training models to avoid triggering probes (adversarial robustness)
-- Probes on attention patterns (only residual stream v1)
-- Real-time intervention (blocking responses)
+- Probes on attention patterns (residual stream only in v1)
+- Real-time intervention/blocking (detection and alerting only in v1)
 - Multi-turn conversation state tracking
-- Interpretability of why probe triggered (just detection)
+- Interpretability of why probe triggered (detection only, not explanation)
+- Adversarial robustness testing of probes
 
 ---
 
@@ -289,20 +291,26 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
-| Probes overfit to training data | High | Medium | Cross-model validation, diverse training sets |
-| Adversarial evasion of probes | High | Medium | Ensemble probes, regular signature updates |
-| Latency impact on production | Medium | Low | Async mode, sampling strategies |
-| False positives cause alert fatigue | Medium | Medium | Tunable thresholds, alert aggregation |
-| Signatures leak detection capabilities | Medium | Low | Access control, encryption |
+| Probes overfit to training data | High | Medium | Cross-model validation (train A, test B), diverse training sets |
+| Adversarial evasion of probes | High | Medium | Ensemble probes, regular signature updates, monitor evasion attempts |
+| Distribution shift (prod != train) | High | High | Monitor activation statistics, retrain quarterly, drift detection |
+| Label noise in training data | Medium | Medium | Confident learning, manual audit of edge cases, inter-annotator agreement |
+| Probe detects spurious correlations | High | Medium | Ablation studies, feature importance analysis, causal probing |
+| Latency impact on production | Medium | Low | Async mode, sampling strategies, caching |
+| False positives cause alert fatigue | Medium | Medium | Tunable thresholds, alert aggregation, severity levels |
+| Signatures leak detection capabilities | Medium | Low | Access control, encryption, don't expose raw weights via API |
 
 ---
 
 ## 9. Success Metrics
 
 ### 9.1 Detection Quality
-- F1 score per behavioral category (target: >90% for P0)
-- False positive rate (target: <1%)
-- Cross-model generalization (train on A, test on B)
+- F1 score per behavioral category:
+  - P0 (safety): >95% for alignment faking, >90% for other P0
+  - P1/P2: >85%
+- False positive rate: <5% for P0 (recall-optimized), <1% for P1/P2
+- Cross-model generalization: >80% F1 (train on model A, test on model B)
+- All metrics computed on held-out test set with bootstrap confidence intervals
 
 ### 9.2 Operational
 - Mean time to detection (inline mode)
@@ -313,6 +321,20 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 - Number of models monitored
 - Number of signatures in database
 - Daily responses scanned
+
+### 9.4 Evaluation Protocol
+
+To ensure rigorous and reproducible evaluation:
+
+1. **Data Split**: 80% train / 20% held-out test, stratified by class
+2. **Test Indices**: Saved with signature for reproducibility
+3. **Threshold Selection**: Via nested cross-validation on training set, never on test
+4. **Metrics Reported**:
+   - Primary: F1 at optimal threshold (on test set)
+   - Secondary: F1 at fixed threshold (0.5), AUROC, precision, recall
+5. **Confidence Intervals**: Bootstrap (n=1000) on test set
+6. **Cross-Model Validation**: Train on model A, evaluate on model B
+7. **Ablation**: Report performance with random feature subsets to verify signal
 
 ---
 
@@ -340,8 +362,10 @@ Think: **antivirus signatures, but for LLM behavioral states.**
 
 ## Appendix B: Related Work
 
-- Anthropic alignment faking paper (2024)
-- Representation Engineering (Zou et al.)
-- Probing classifiers literature
-- SAE interpretability (Anthropic, EleutherAI)
-- Contrast Consistent Search (CCS)
+- **Alignment Faking**: Greenblatt et al. (2024) "Alignment faking in large language models" - Anthropic
+- **Representation Engineering**: Zou et al. (2023) "Representation Engineering: A Top-Down Approach to AI Transparency"
+- **Probing Classifiers**: Belinkov (2022) "Probing Classifiers: Promises, Shortcomings, and Advances"
+- **SAE Interpretability**: Cunningham et al. (2023) "Sparse Autoencoders Find Highly Interpretable Features in Language Models"
+- **Contrast Consistent Search**: Burns et al. (2022) "Discovering Latent Knowledge in Language Models Without Supervision"
+- **Sycophancy**: Perez et al. (2022) "Discovering Language Model Behaviors with Model-Written Evaluations"
+- **TruthfulQA**: Lin et al. (2022) "TruthfulQA: Measuring How Models Mimic Human Falsehoods"

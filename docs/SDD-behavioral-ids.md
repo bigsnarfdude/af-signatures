@@ -1,9 +1,10 @@
 # System Design Document: LLM Behavioral Intrusion Detection System
 
 **Project Name:** BIDS (Behavioral Intrusion Detection System)
-**Version:** 0.1 Draft
+**Version:** 0.2 Draft
 **Date:** 2026-01-11
 **Author:** Vincent / Claude
+**Last Updated:** 2026-01-11
 
 ---
 
@@ -98,14 +99,15 @@ class ProbeSignature:
     behavior_category: str       # "safety", "quality", "security"
     behavior_name: str           # "alignment_faking"
     description: str
-    training_samples: int
-    training_f1: float
-    training_precision: float
-    training_recall: float
+    total_samples: int           # Total samples in dataset
+    test_indices: List[int]      # Indices for held-out evaluation (prevents data leakage)
+    test_f1: float               # F1 on held-out test set
+    test_precision: float        # Precision on held-out test set
+    test_recall: float           # Recall on held-out test set
 
     # Provenance
     training_data_hash: str      # SHA256 of training data
-    training_config: Dict        # Hyperparameters used
+    training_config: Dict        # Hyperparameters used (including random_state)
 
 # Serialized format (JSON)
 {
@@ -121,11 +123,17 @@ class ProbeSignature:
     "threshold": 0.94,
     "behavior_category": "safety",
     "behavior_name": "alignment_faking",
+    "total_samples": 2330,
+    "test_indices": [45, 102, 156, ...],  # For held-out evaluation
     "metrics": {
-        "f1": 0.996,
-        "precision": 0.992,
-        "recall": 1.0,
-        "training_samples": 2330
+        "test_f1": 0.996,        # On held-out test set
+        "test_precision": 0.992,
+        "test_recall": 1.0
+    },
+    "training_config": {
+        "regularization": "l1",
+        "test_size": 0.2,
+        "random_state": 42
     }
 }
 ```
@@ -661,8 +669,13 @@ class SignatureTrainer:
         labels: List[int],
         test_size: float = 0.2,
         regularization: str = "l2",
-    ) -> ProbeSignature:
-        """Train probe and return signature."""
+    ) -> Tuple[ProbeSignature, List[int]]:
+        """Train probe and return signature with test indices.
+
+        Returns:
+            signature: The trained probe signature
+            test_indices: Indices of samples used for testing (for held-out evaluation)
+        """
 
         # Extract activations
         print("Extracting activations...")
@@ -673,9 +686,10 @@ class SignatureTrainer:
         X = np.stack(activations)
         y = np.array(labels)
 
-        # Split
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y
+        # Split with index tracking (prevents data leakage in evaluation)
+        indices = np.arange(len(X))
+        X_train, X_test, y_train, y_test, train_idx, test_idx = train_test_split(
+            X, y, indices, test_size=test_size, random_state=42, stratify=y
         )
 
         # Train
@@ -685,13 +699,14 @@ class SignatureTrainer:
             solver="saga",
             max_iter=1000,
             C=0.1,
+            random_state=42,  # For reproducibility
         )
         clf.fit(X_train, y_train)
 
-        # Find optimal threshold
+        # Find optimal threshold (consistent range: 0.05-0.95)
         y_prob = clf.predict_proba(X_test)[:, 1]
         best_f1, best_thresh = 0, 0.5
-        for thresh in np.arange(0.1, 0.9, 0.01):
+        for thresh in np.arange(0.05, 0.95, 0.01):
             pred = (y_prob > thresh).astype(int)
             f1 = f1_score(y_test, pred)
             if f1 > best_f1:
@@ -716,21 +731,23 @@ class SignatureTrainer:
             behavior_category="safety",  # TODO: parameterize
             behavior_name=self.behavior_name,
             description=f"Probe for {self.behavior_name} detection",
-            training_samples=len(texts),
-            training_f1=best_f1,
-            training_precision=precision_score(y_test, y_pred),
-            training_recall=recall_score(y_test, y_pred),
+            total_samples=len(texts),
+            test_indices=test_idx.tolist(),  # For held-out evaluation
+            test_f1=best_f1,  # Clarify this is on test set
+            test_precision=precision_score(y_test, y_pred),
+            test_recall=recall_score(y_test, y_pred),
             training_data_hash=hashlib.sha256(
                 str(sorted(texts)).encode()
             ).hexdigest()[:16],
             training_config={
                 "regularization": regularization,
                 "test_size": test_size,
+                "random_state": 42,
             },
         )
 
         print(f"Trained: F1={best_f1:.1%}, threshold={best_thresh:.2f}")
-        return signature
+        return signature, test_idx.tolist()
 ```
 
 ---
