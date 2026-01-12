@@ -1,10 +1,10 @@
-# BIDS - Behavioral Intrusion Detection System
+# signatures for alignment faking
 
 Detection signatures for alignment faking in LLMs using SAE feature activations.
 
 ## Overview
 
-BIDS detects alignment faking behavior in LLM outputs by analyzing internal model activations. Like antivirus signatures, each model gets a signature file containing discriminative SAE features and their weights.
+detects alignment faking behavior in LLM outputs by analyzing internal model activations. Like antivirus signatures, each model gets a signature file containing discriminative SAE features and their weights.
 
 **Current Results:** 98.6% F1 score on held-out test data (GPT-2 Small)
 
